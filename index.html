@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Add Retailer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+  <style>
+    body { font-family: Arial, sans-serif; padding: 14px; }
+    input, select, textarea, button {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 10px;
+      box-sizing: border-box;
+    }
+    #map { height: 280px; margin-bottom: 10px; }
+    button { background:#111; color:#fff; border:none; }
+    .warn { color:#b00; font-size:13px; }
+  </style>
+</head>
+<body>
+
+<h2>Add Retailer</h2>
+
+<form id="form">
+
+  <input name="email" placeholder="Email" required>
+  <input name="shopName" placeholder="Shop Name" required>
+  <input name="building" placeholder="Building Name">
+  <input name="street" placeholder="Street Name">
+
+  <input type="file" id="photo" accept="image/*" capture="environment" required>
+
+  <input name="shopCategory" placeholder="Type of shop (Accessories / Phones)" required>
+  <input name="natureBusiness" placeholder="Nature of business (Retail / Wholesale)" required>
+
+  <input name="ownerName" placeholder="Owner Name">
+  <input name="ownerContact" placeholder="Owner Contact">
+  <input name="managerName" placeholder="Manager Name">
+  <input name="managerContact" placeholder="Manager Contact">
+
+  <textarea name="otherInfo" placeholder="Any other information"></textarea>
+
+  <button type="button" id="locBtn">Use Current Location</button>
+  <div class="warn" id="gpsWarn"></div>
+
+  <div id="map"></div>
+
+  <input type="hidden" id="lat">
+  <input type="hidden" id="lng">
+
+  <button type="submit">Submit</button>
+</form>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+const SCRIPT_URL =
+"https://script.google.com/macros/s/AKfycbyp7WmblBgFpYVtN_DTO6AXxDZSR3ZP-257kTsCKHZd0a0Y-jQymo6jMpi_qFCAL068/exec";
+
+const map = L.map('map').setView([0,0], 2);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+let marker;
+
+document.getElementById("locBtn").onclick = () => {
+  navigator.geolocation.getCurrentPosition(pos => {
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+
+    if (marker) map.removeLayer(marker);
+    marker = L.marker([lat,lng]).addTo(map);
+    map.setView([lat,lng], 17);
+
+    document.getElementById("lat").value = lat;
+    document.getElementById("lng").value = lng;
+
+    // Kenya bounds warning
+    if (lat < -5 || lat > 5 || lng < 33 || lng > 42) {
+      document.getElementById("gpsWarn").innerText =
+        "⚠ Location appears outside Kenya, but submission is allowed.";
+    } else {
+      document.getElementById("gpsWarn").innerText = "";
+    }
+  });
+};
+
+document.getElementById("form").onsubmit = async e => {
+  e.preventDefault();
+
+  const lat = lat.value;
+  const lng = lng.value;
+  if (!lat || !lng) {
+    alert("Please capture GPS location");
+    return;
+  }
+
+  const file = document.getElementById("photo").files[0];
+  const reader = new FileReader();
+
+  reader.onloadend = async () => {
+    const base64 = reader.result.split(",")[1];
+    const fd = new FormData(e.target);
+
+    const payload = Object.fromEntries(fd.entries());
+    payload.latitude = lat;
+    payload.longitude = lng;
+    payload.image = {
+      name: file.name,
+      type: file.type,
+      data: base64
+    };
+
+    await fetch(SCRIPT_URL, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+
+    alert("Retailer added successfully");
+    e.target.reset();
+    if (marker) map.removeLayer(marker);
+  };
+
+  reader.readAsDataURL(file);
+};
+</script>
+
+</body>
+</html>
