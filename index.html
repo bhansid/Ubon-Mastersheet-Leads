@@ -16,8 +16,30 @@
       box-sizing: border-box;
     }
     #map { height: 280px; margin-bottom: 10px; }
-    button { background:#111; color:#fff; border:none; }
-    .warn { color:#b00; font-size:13px; }
+    button { background:#111; color:#fff; border:none; cursor:pointer; }
+    button:disabled { background:#777; cursor:not-allowed; }
+
+    #progressWrap {
+      display: none;
+      margin-top: 10px;
+    }
+    #progressBar {
+      width: 0%;
+      height: 10px;
+      background: #0a7cff;
+      border-radius: 4px;
+      transition: width 0.3s;
+    }
+    #progressContainer {
+      width: 100%;
+      background: #ddd;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    #statusText {
+      font-size: 13px;
+      margin-top: 6px;
+    }
   </style>
 </head>
 <body>
@@ -44,14 +66,21 @@
   <textarea name="otherInfo" placeholder="Any other information"></textarea>
 
   <button type="button" id="locBtn">Use Current Location</button>
-  <div class="warn" id="gpsWarn"></div>
 
   <div id="map"></div>
 
   <input type="hidden" id="lat">
   <input type="hidden" id="lng">
 
-  <button type="submit">Submit</button>
+  <button type="submit" id="submitBtn">Submit</button>
+
+  <div id="progressWrap">
+    <div id="progressContainer">
+      <div id="progressBar"></div>
+    </div>
+    <div id="statusText">Starting…</div>
+  </div>
+
 </form>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -62,12 +91,23 @@ const SCRIPT_URL =
 
 const map = L.map('map').setView([0,0], 2);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-let marker;
 
+let marker;
+let lastLatLng = null;
+
+function setProgress(pct, text) {
+  document.getElementById("progressWrap").style.display = "block";
+  document.getElementById("progressBar").style.width = pct + "%";
+  document.getElementById("statusText").innerText = text;
+}
+
+// GPS
 document.getElementById("locBtn").onclick = () => {
   navigator.geolocation.getCurrentPosition(pos => {
     const lat = pos.coords.latitude;
     const lng = pos.coords.longitude;
+
+    lastLatLng = { lat, lng };
 
     if (marker) map.removeLayer(marker);
     marker = L.marker([lat,lng]).addTo(map);
@@ -75,35 +115,44 @@ document.getElementById("locBtn").onclick = () => {
 
     document.getElementById("lat").value = lat;
     document.getElementById("lng").value = lng;
-
-    // Kenya bounds warning
-    if (lat < -5 || lat > 5 || lng < 33 || lng > 42) {
-      document.getElementById("gpsWarn").innerText =
-        "⚠ Location appears outside Kenya, but submission is allowed.";
-    } else {
-      document.getElementById("gpsWarn").innerText = "";
-    }
   });
 };
 
+// Submit
 document.getElementById("form").onsubmit = async e => {
   e.preventDefault();
 
-  const lat = lat.value;
-  const lng = lng.value;
-  if (!lat || !lng) {
+  if (!lastLatLng) {
     alert("Please capture GPS location");
     return;
   }
+
+  const { lat, lng } = lastLatLng;
+
+  // Kenya bounds check
+  const outsideKenya = lat < -5 || lat > 5 || lng < 33 || lng > 42;
+  if (outsideKenya) {
+    const ok = confirm(
+      "⚠ This location appears to be OUTSIDE Kenya.\n\nDo you want to continue anyway?"
+    );
+    if (!ok) return;
+  }
+
+  const submitBtn = document.getElementById("submitBtn");
+  submitBtn.disabled = true;
+
+  setProgress(10, "Reading image…");
 
   const file = document.getElementById("photo").files[0];
   const reader = new FileReader();
 
   reader.onloadend = async () => {
+    setProgress(40, "Uploading image to Drive…");
+
     const base64 = reader.result.split(",")[1];
     const fd = new FormData(e.target);
-
     const payload = Object.fromEntries(fd.entries());
+
     payload.latitude = lat;
     payload.longitude = lng;
     payload.image = {
@@ -112,14 +161,21 @@ document.getElementById("form").onsubmit = async e => {
       data: base64
     };
 
+    setProgress(70, "Saving data…");
+
     await fetch(SCRIPT_URL, {
       method: "POST",
       body: JSON.stringify(payload)
     });
 
+    setProgress(100, "Completed");
+
     alert("Retailer added successfully");
+
     e.target.reset();
     if (marker) map.removeLayer(marker);
+    submitBtn.disabled = false;
+    document.getElementById("progressWrap").style.display = "none";
   };
 
   reader.readAsDataURL(file);
